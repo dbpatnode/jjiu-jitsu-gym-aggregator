@@ -1,160 +1,108 @@
 import { NextResponse } from "next/server";
 import axios from "axios";
-import cheerio from "cheerio";
-
-type ClassTimes = {
-  morning: string;
-  afternoon: string;
-  evening: string;
-};
 
 type Gym = {
-  link: string;
-  title: string;
-  snippet: string;
-  pagemap?: {
-    cse_image?: { src: string }[];
-  };
-  classTimes?: ClassTimes;
+  name: string;
+  address: string;
+  rating: number;
+  userRatingsTotal: number;
+  placeId: string;
+  website?: string;
+  lat?: number;
+  lng?: number;
+  photoUrl?: string;
 };
 
-const excludedDomains = [
-  "yelp.com",
-  "reddit.com",
-  "blogspot.com",
-  "wordpress.com",
-  "bjjglobetrotters.com",
-];
-
-// Function to check if the gym result is relevant
-function isRelevantResult(gym: Gym): boolean {
-  try {
-    const url = new URL(gym.link);
-    return !excludedDomains.includes(url.hostname);
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      console.error(
-        "Error parsing URL in isRelevantResult:",
-        gym.link,
-        error.message
-      );
-    } else {
-      console.error(
-        "Unknown error parsing URL in isRelevantResult:",
-        gym.link,
-        error
-      );
-    }
-    return false; // Exclude the result if the URL is invalid
-  }
-}
-
-// Function to scrape additional details like class times from the gym website
-async function scrapeGymDetails(url: string): Promise<Partial<Gym>> {
-  try {
-    const { data } = await axios.get(url);
-    const $ = cheerio.load(data);
-
-    const classTimes: ClassTimes = {
-      morning: $(".class-times.morning").text() || "",
-      afternoon: $(".class-times.afternoon").text() || "",
-      evening: $(".class-times.evening").text() || "",
-    };
-
-    return { classTimes };
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      console.error("Error scraping gym details for URL:", url, error.message);
-    } else {
-      console.error("Unknown error scraping gym details for URL:", url, error);
-    }
-    return {};
-  }
-}
-
-// Main GET handler for the API route
 export async function GET(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
-  const city = searchParams.get("city") || "";
-  const state = searchParams.get("state") || "";
-  const query = searchParams.get("query") || "";
-  const gi = searchParams.get("gi") || "";
-  const noGi = searchParams.get("noGi") || "";
+  const city = searchParams.get("city") || "Seattle";
+  const apiKey = process.env.GOOGLE_API_KEY;
 
-  // Construct the search query to filter out unwanted results
-  const searchQuery = `${query} jiu jitsu gym in ${city}, ${state} ${
-    gi ? "gi" : ""
-  } ${
-    noGi ? "no gi" : ""
-  } -site:yelp.com -site:reddit.com -site:blogspot.com -site:wordpress.com -site:bjjglobetrotters.com`;
+  if (!apiKey) {
+    console.error("Google API key is missing.");
+    return NextResponse.json(
+      { error: "Google API key is missing." },
+      { status: 500 }
+    );
+  }
+
+  const googlePlacesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=BJJ+gym+in+${city}&key=${apiKey}`;
 
   try {
-    console.log("Executing search with query:", searchQuery);
+    console.log("Requesting data from Google Places API:", googlePlacesUrl);
+    const response = await axios.get(googlePlacesUrl);
 
-    // Fetch data from the Google Custom Search API
-    const response = await axios.get(
-      "https://www.googleapis.com/customsearch/v1",
-      {
-        params: {
-          key: process.env.GOOGLE_API_KEY,
-          cx: process.env.GOOGLE_SEARCH_ENGINE_ID,
-          q: searchQuery,
-        },
-      }
-    );
-
-    if (!response.data.items) {
-      console.error("No items returned from Google API");
-      return NextResponse.json({ error: "No results found" }, { status: 404 });
+    if (response.data.status !== "OK") {
+      console.error(
+        "Error from Google Places API:",
+        response.data.status,
+        response.data.error_message
+      );
+      return NextResponse.json(
+        { error: response.data.status, details: response.data.error_message },
+        { status: 500 }
+      );
     }
 
-    // Get the gym results from the response and filter out unwanted results
-    const gyms: Gym[] = response.data.items;
-    const filteredGyms = gyms.filter(isRelevantResult);
+    // Retrieve the basic information for the gyms
+    const basicGyms: Gym[] = response.data.results.map((place: any) => ({
+      name: place.name,
+      address: place.formatted_address,
+      rating: place.rating,
+      userRatingsTotal: place.user_ratings_total,
+      placeId: place.place_id,
+      lat: place.geometry.location.lat,
+      lng: place.geometry.location.lng,
+    }));
 
-    console.log("Filtered gyms count:", filteredGyms.length);
+    // Fetch detailed information for each place, including the website and photos
+    const detailedGyms = await Promise.all(
+      basicGyms.map(async (gym) => {
+        try {
+          const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${gym.placeId}&fields=name,website,photo&key=${apiKey}`;
+          const detailsResponse = await axios.get(detailsUrl);
 
-    // Scrape additional details for each relevant gym
-    const gymDetailsPromises = filteredGyms.map(async (gym) => {
-      try {
-        const details = await scrapeGymDetails(gym.link);
-        return { ...gym, ...details };
-      } catch (error: unknown) {
-        if (error instanceof Error) {
+          if (detailsResponse.data.status === "OK") {
+            const placeDetails = detailsResponse.data.result;
+            gym.website = placeDetails.website || null;
+
+            // Check if photos are available and retrieve the first one
+            if (placeDetails.photos && placeDetails.photos.length > 0) {
+              const photoReference = placeDetails.photos[0].photo_reference;
+              gym.photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${photoReference}&key=${apiKey}`;
+            }
+          }
+        } catch (error) {
           console.error(
-            "Error scraping details for gym:",
-            gym.link,
-            error.message
-          );
-        } else {
-          console.error(
-            "Unknown error scraping details for gym:",
-            gym.link,
-            error
+            `Error fetching details for placeId ${gym.placeId}:`,
+            (error as Error).message
           );
         }
-        return gym; // Return gym without details if scraping fails
-      }
-    });
+        return gym;
+      })
+    );
 
-    const gymsWithDetails = await Promise.all(gymDetailsPromises);
-
-    // Return the final filtered and enriched list of gyms
-    return NextResponse.json({ gyms: gymsWithDetails });
+    return NextResponse.json({ gyms: detailedGyms });
   } catch (error: unknown) {
     if (error instanceof Error) {
-      console.error("Error fetching data from Google API:", error.message);
+      console.error(
+        "Error fetching data from Google Places API:",
+        error.message
+      );
       return NextResponse.json(
         {
-          error: "Error fetching data from Google API",
+          error: "Error fetching data from Google Places API",
           details: error.message,
         },
         { status: 500 }
       );
     } else {
-      console.error("Unknown error fetching data from Google API:", error);
+      console.error(
+        "Unknown error fetching data from Google Places API:",
+        error
+      );
       return NextResponse.json(
-        { error: "Unknown error fetching data from Google API" },
+        { error: "Unknown error fetching data from Google Places API" },
         { status: 500 }
       );
     }

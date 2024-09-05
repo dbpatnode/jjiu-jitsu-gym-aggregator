@@ -1,30 +1,29 @@
 "use client";
 import { useState } from "react";
-import GymTile from "@/components/Tile/Tile"; // Ensure this path is correct
+import { GoogleMap, LoadScriptNext, MarkerF } from "@react-google-maps/api";
+import Image from "next/image";
 
 type Gym = {
-  link: string;
-  title: string;
-  snippet: string;
-  pagemap?: {
-    cse_image?: { src: string }[];
-  };
-  classTimes?: {
-    morning: string;
-    afternoon: string;
-    evening: string;
-  };
+  name: string;
+  address: string;
+  rating: number;
+  userRatingsTotal: number;
+  placeId: string;
+  website?: string;
+  lat?: number;
+  lng?: number;
+  photoUrl?: string;
 };
 
 const SearchPage = () => {
   const [searchResults, setSearchResults] = useState<Gym[]>([]);
   const [city, setCity] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null); // State for managing errors
+  const [error, setError] = useState<string | null>(null);
 
   const handleSearch = async () => {
     setLoading(true);
-    setError(null); // Clear any previous errors
+    setError(null);
 
     try {
       const response = await fetch(`/api/search?city=${city}`);
@@ -42,6 +41,17 @@ const SearchPage = () => {
     }
   };
 
+  const mapContainerStyle = {
+    width: "100%",
+    height: "400px",
+  };
+
+  const defaultCenter = {
+    lat: searchResults.length > 0 ? searchResults[0].lat || 47.6062 : 47.6062,
+    lng:
+      searchResults.length > 0 ? searchResults[0].lng || -122.3321 : -122.3321,
+  };
+
   return (
     <div>
       <h1>Find a Jiu-Jitsu Gym</h1>
@@ -51,14 +61,64 @@ const SearchPage = () => {
         onChange={(e) => setCity(e.target.value)}
       />
       <button onClick={handleSearch}>Search</button>
+
       {loading && <p>Loading...</p>}
-      {error && <p style={{ color: "red" }}>{error}</p>}{" "}
-      {/* Display error if any */}
-      {!loading && !error && (
-        <div className="results">
-          {searchResults.map((gym, index) => (
-            <GymTile key={index} gym={gym} />
-          ))}
+      {error && <p style={{ color: "red" }}>{error}</p>}
+
+      {!loading && !error && searchResults.length > 0 && (
+        <div>
+          <LoadScriptNext
+            googleMapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_API_KEY!}
+          >
+            <GoogleMap
+              mapContainerStyle={mapContainerStyle}
+              center={defaultCenter}
+              zoom={12}
+            >
+              {searchResults.map(
+                (gym) =>
+                  gym.lat &&
+                  gym.lng && (
+                    <MarkerF
+                      key={gym.placeId}
+                      position={{ lat: gym.lat, lng: gym.lng }}
+                      title={gym.name}
+                    />
+                  )
+              )}
+            </GoogleMap>
+          </LoadScriptNext>
+
+          <div className="results">
+            {searchResults.map((gym) => (
+              <div key={gym.placeId} className="gym-tile">
+                {gym.photoUrl && (
+                  <Image
+                    src={gym.photoUrl}
+                    alt={gym.name}
+                    width={400}
+                    height={300}
+                    layout="responsive"
+                    objectFit="cover"
+                  />
+                )}
+                <h2>{gym.name}</h2>
+                <p>{gym.address}</p>
+                <p>
+                  Rating: {gym.rating} ({gym.userRatingsTotal} reviews)
+                </p>
+                {gym.website && (
+                  <a
+                    href={gym.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Visit Website
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
