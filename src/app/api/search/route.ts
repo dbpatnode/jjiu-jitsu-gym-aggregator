@@ -13,6 +13,22 @@ type Gym = {
   photoUrl?: string;
 };
 
+type GooglePlaceResult = {
+  name: string;
+  formatted_address: string;
+  rating: number;
+  user_ratings_total: number;
+  place_id: string;
+  geometry: {
+    location: {
+      lat: number;
+      lng: number;
+    };
+  };
+  photos?: { photo_reference: string }[];
+  website?: string;
+};
+
 export async function GET(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const city = searchParams.get("city") || "Seattle";
@@ -44,16 +60,17 @@ export async function GET(request: Request): Promise<NextResponse> {
       );
     }
 
-    // Retrieve the basic information for the gyms
-    const basicGyms: Gym[] = response.data.results.map((place: any) => ({
-      name: place.name,
-      address: place.formatted_address,
-      rating: place.rating,
-      userRatingsTotal: place.user_ratings_total,
-      placeId: place.place_id,
-      lat: place.geometry.location.lat,
-      lng: place.geometry.location.lng,
-    }));
+    const basicGyms: Gym[] = response.data.results.map(
+      (place: GooglePlaceResult) => ({
+        name: place.name,
+        address: place.formatted_address,
+        rating: place.rating,
+        userRatingsTotal: place.user_ratings_total,
+        placeId: place.place_id,
+        lat: place.geometry.location.lat,
+        lng: place.geometry.location.lng,
+      })
+    );
 
     // Fetch detailed information for each place, including the website and photos
     const detailedGyms = await Promise.all(
@@ -66,7 +83,7 @@ export async function GET(request: Request): Promise<NextResponse> {
             const placeDetails = detailsResponse.data.result;
             gym.website = placeDetails.website || null;
 
-            // Check if photos are available and retrieve the first one
+            // Check if photos are available and grab the first one
             if (placeDetails.photos && placeDetails.photos.length > 0) {
               const photoReference = placeDetails.photos[0].photo_reference;
               gym.photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${photoReference}&key=${apiKey}`;

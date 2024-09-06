@@ -20,6 +20,7 @@
     "paths": {
       "@/components/*": ["./src/app/_components/*"],
       "@/sections/*": ["./src/app/_sections/*"],
+      "@/pages/*": ["./src/app/_pages/*"],
       "@/types/*": ["./src/app/_types/*"],
       "@/assets/*": ["./src/app/_assets/*"],
       "@/i18n/*": ["./src/app/_i18n/*"],
