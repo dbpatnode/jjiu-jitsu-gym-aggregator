@@ -1,45 +1,36 @@
-type Gym = {
-  link: string;
-  title: string;
-  snippet: string;
-  pagemap?: {
-    cse_image?: { src: string }[];
-  };
-  classTimes?: {
-    morning: string;
-    afternoon: string;
-    evening: string;
-  };
-};
+// components/Tile.tsx
+import Image from "next/image";
+import { Gym } from "@/types/shared";
 
 type TileProps = {
   gym: Gym;
 };
 
-const Tile = ({ gym }: TileProps) => (
-  <div className="gym-tile">
-    <img
-      src={gym.pagemap?.cse_image?.[0]?.src || "/default-gym.jpg"}
-      alt={gym.title}
-    />
-    <h2>{gym.title}</h2>
-    <p>{gym.snippet}</p>
-    {gym.classTimes && (
-      <div>
-        <strong>Class Times:</strong>
-        <ul>
-          {Object.entries(gym.classTimes).map(([time, value]) => (
-            <li key={time}>{`${
-              time.charAt(0).toUpperCase() + time.slice(1)
-            }: ${value}`}</li>
-          ))}
-        </ul>
-      </div>
-    )}
-    <a href={gym.link} target="_blank" rel="noopener noreferrer">
-      Visit Website
-    </a>
-  </div>
-);
+const Tile = ({ gym }: TileProps) => {
+  return (
+    <div className="gym-tile">
+      {gym.photoUrl && (
+        <Image
+          src={gym.photoUrl}
+          alt={gym.name}
+          width={400}
+          height={300}
+          layout="responsive"
+          objectFit="cover"
+        />
+      )}
+      <h2>{gym.name}</h2>
+      <p>{gym.address}</p>
+      <p>
+        Rating: {gym.rating} ({gym.userRatingsTotal} reviews)
+      </p>
+      {gym.website && (
+        <a href={gym.website} target="_blank" rel="noopener noreferrer">
+          Visit Website
+        </a>
+      )}
+    </div>
+  );
+};
 
 export default Tile;
